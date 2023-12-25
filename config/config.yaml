@@ -5,10 +5,10 @@ seed: 0
 exp_name: ???
 
 # the batch size for training; for FSDP, the batch size per GPU is batch_size / (grad_accumulation_steps * num_gpus)
-batch_size: 4
+batch_size: 1
 
 # the batch size during evaluation and sampling, if enabled
-eval_batch_size: 16
+eval_batch_size: 1
 
 # debug mode (disables wandb, model checkpointing, etc.)
 debug: false
@@ -39,7 +39,7 @@ local_dirs:
 sample_during_eval: true
 
 # how many model samples to generate during evaluation
-n_eval_model_samples: 16
+n_eval_model_samples: 12
 
 # whether to eval at the very beginning of training
 do_first_eval: true

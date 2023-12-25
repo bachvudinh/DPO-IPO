@@ -38,6 +38,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
         )
 
     TrainerClass = getattr(trainers, config.trainer)
+    
     print(f'Creating trainer on process {rank} with world size {world_size}')
     trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model, rank=rank, world_size=world_size)
 
@@ -81,7 +82,7 @@ def main(config: DictConfig):
     model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
     policy = transformers.AutoModelForCausalLM.from_pretrained(
-        config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+        config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
     disable_dropout(policy)
 
     if config.loss.name in {'dpo', 'ipo'}:
