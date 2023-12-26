@@ -111,7 +111,7 @@ def main(config: DictConfig):
     # lora_policy.config.pretraining_tp = 1
 
     if config.loss.name in {'sft'}:
-        lora_reference_model = None
+        lora_reference = None
 
     # if config.model.archive is not None:
     #     state_dict = torch.load(config.model.archive, map_location='cpu')
