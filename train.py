@@ -90,7 +90,7 @@ def main(config: DictConfig):
             'Wqkv',
             'out_proj',
         ],
-        bias = 'None',
+        bias = 'none',
         task_type = 'CAUSAL_LM',
     )
     ipo_peft_config = LoraConfig(
@@ -100,7 +100,7 @@ def main(config: DictConfig):
             'Wqkv',
             'out_proj',
         ],
-        bias = 'None',
+        bias = 'none',
         task_type = 'CAUSAL_LM',
     )
     policy = transformers.AutoModelForCausalLM.from_pretrained(
