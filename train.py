@@ -13,6 +13,7 @@ import json
 import socket
 from typing import Optional, Set
 import resource
+from perf import LoraConfig, get_perf_model
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
@@ -81,9 +82,21 @@ def main(config: DictConfig):
     print('building policy')
     model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
+    perf_config = LoraConfig(
+        r =32,
+        lora_alpha = 16,
+        target_modules = [
+            'Wqkv',
+            'out_proj',
+        ],
+        bias = 'None',
+        task_type = 'CAUSAL_LM',
+    )
     policy = transformers.AutoModelForCausalLM.from_pretrained(
         config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
     disable_dropout(policy)
+    lora_policy = get_perf_model(policy, perf_config)
+    # policy.config.pretraining_tp = 1
 
     if config.loss.name in {'dpo', 'ipo'}:
         print('building reference model')
@@ -91,8 +104,9 @@ def main(config: DictConfig):
         reference_model = transformers.AutoModelForCausalLM.from_pretrained(
             config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True, low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
         disable_dropout(reference_model)
+        lora_reference_model = get_perf_model(reference_model, perf_config)
     else:
-        reference_model = None
+        lora_reference_model = None
 
     if config.model.archive is not None:
         state_dict = torch.load(config.model.archive, map_location='cpu')
@@ -100,7 +114,7 @@ def main(config: DictConfig):
         print(f'loading pre-trained weights at step {step} from {config.model.archive} with metrics {json.dumps(metrics, indent=2)}')
         policy.load_state_dict(state_dict['state'])
         if config.loss.name in {'dpo', 'ipo'}:
-            reference_model.load_state_dict(state_dict['state'])
+            lora_reference_model.load_state_dict(state_dict['state'])
         print('loaded pre-trained weights')
     
     if 'FSDP' in config.trainer:
@@ -112,7 +126,7 @@ def main(config: DictConfig):
         mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
     else:
         print('starting single-process worker')
-        worker_main(0, 1, config, policy, reference_model)
+        worker_main(0, 1, config, policy, lora_reference_model)
 
 
 if __name__ == '__main__':
