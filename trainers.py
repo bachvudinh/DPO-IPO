@@ -411,7 +411,7 @@ class BasicTrainer(object):
             'state': state,
             'metrics': metrics if metrics is not None else {},
         }, output_path)
-    
+
     def save(self, output_dir: Optional[str] = None, metrics: Optional[Dict] = None):
         """Save policy, optimizer, and scheduler state to disk."""
 
@@ -425,6 +425,15 @@ class BasicTrainer(object):
 
         scheduler_state_dict = self.scheduler.state_dict()
         self.write_state_dict(self.example_counter, scheduler_state_dict, metrics, 'scheduler.pt', output_dir)
+    def save_lora_params(self, output_dir: Optional[str] = None, metrics: Optional[Dict] = None):
+        """Save Adapters Params to disk."""
+        if output_dir is None:
+            output_dir = os.path.join(self.run_dir, f'LATEST')
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, 'adapters_params')
+        rank0_print(f'writing checkpoint to {output_path}...')
+        self.policy.save_pretrained(output_path)
+
 
 
 class FSDPTrainer(BasicTrainer):

@@ -4,6 +4,7 @@ import torch.nn as nn
 import transformers
 from utils import get_local_dir, get_local_run_dir, disable_dropout, init_distributed, get_open_port
 import os
+import gc
 import hydra
 import torch.multiprocessing as mp
 from omegaconf import OmegaConf, DictConfig
@@ -13,7 +14,7 @@ import json
 import socket
 from typing import Optional, Set
 import resource
-from perf import LoraConfig, get_perf_model
+from peft import LoraConfig, get_peft_model, PeftConfig, PeftModel
 
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
@@ -44,7 +45,7 @@ def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Modul
     trainer = TrainerClass(policy, config, config.seed, config.local_run_dir, reference_model=reference_model, rank=rank, world_size=world_size)
 
     trainer.train()
-    trainer.save()
+    trainer.save_lora_params()
 
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
@@ -82,7 +83,17 @@ def main(config: DictConfig):
     print('building policy')
     model_kwargs = {'device_map': 'balanced'} if config.trainer == 'BasicTrainer' else {}
     policy_dtype = getattr(torch, config.model.policy_dtype)
-    perf_config = LoraConfig(
+    peft_config = LoraConfig(
+        r =32,
+        lora_alpha = 16,
+        target_modules = [
+            'Wqkv',
+            'out_proj',
+        ],
+        bias = 'None',
+        task_type = 'CAUSAL_LM',
+    )
+    ipo_peft_config = LoraConfig(
         r =32,
         lora_alpha = 16,
         target_modules = [
@@ -95,27 +106,40 @@ def main(config: DictConfig):
     policy = transformers.AutoModelForCausalLM.from_pretrained(
         config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
     disable_dropout(policy)
-    lora_policy = get_perf_model(policy, perf_config)
-    # policy.config.pretraining_tp = 1
+    lora_policy = get_peft_model(policy, peft_config)
+    lora_policy.print_trainable_parameters()
+    # lora_policy.config.pretraining_tp = 1
 
-    if config.loss.name in {'dpo', 'ipo'}:
-        print('building reference model')
-        reference_model_dtype = getattr(torch, config.model.reference_dtype)
-        reference_model = transformers.AutoModelForCausalLM.from_pretrained(
-            config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True, low_cpu_mem_usage=True, torch_dtype=reference_model_dtype, **model_kwargs)
-        disable_dropout(reference_model)
-        lora_reference_model = get_perf_model(reference_model, perf_config)
-    else:
+    if config.loss.name in {'sft'}:
         lora_reference_model = None
 
+    # if config.model.archive is not None:
+    #     state_dict = torch.load(config.model.archive, map_location='cpu')
+    #     step, metrics = state_dict['step_idx'], state_dict['metrics']
+    #     print(f'loading pre-trained weights at step {step} from {config.model.archive} with metrics {json.dumps(metrics, indent=2)}')
+    #     policy.load_state_dict(state_dict['state'])
+    #     if config.loss.name in {'dpo', 'ipo'}:
+    #         lora_reference_model.load_state_dict(state_dict['state'])
+    #     print('loaded pre-trained weights')
     if config.model.archive is not None:
-        state_dict = torch.load(config.model.archive, map_location='cpu')
-        step, metrics = state_dict['step_idx'], state_dict['metrics']
-        print(f'loading pre-trained weights at step {step} from {config.model.archive} with metrics {json.dumps(metrics, indent=2)}')
-        policy.load_state_dict(state_dict['state'])
+        del policy
+        del lora_policy
+        gc.collect()
+        torch.cuda.empty_cache()
+        lora_config_poli = PeftConfig.from_pretrained(config.model.archive)
+        pretrained_policy = transformers.AutoModelForCausalLM.from_pretrained(
+            lora_config_poli.base_model_name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True, low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+        disable_dropout(pretrained_policy)
+        pretrained_lora_policy = PeftModel.from_pretrained(pretrained_policy, config.model.archive)
+        lora_policy = get_peft_model(pretrained_lora_policy, ipo_peft_config)
         if config.loss.name in {'dpo', 'ipo'}:
-            lora_reference_model.load_state_dict(state_dict['state'])
+            lora_config_ref = PeftConfig.from_pretrained(config.model.archive)
+            pretrained_reference = transformers.AutoModelForCausalLM.from_pretrained(
+                lora_config_ref.base_model_name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True, low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+            pretrained_lora_reference = PeftModel.from_pretrained(pretrained_reference, config.model.archive)
+            lora_reference = get_peft_model(pretrained_lora_reference, ipo_peft_config)
         print('loaded pre-trained weights')
+    
     
     if 'FSDP' in config.trainer:
         world_size = torch.cuda.device_count()
@@ -123,10 +147,10 @@ def main(config: DictConfig):
         soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
         print(f'setting RLIMIT_NOFILE soft limit to {hard} from {soft}')
-        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, policy, reference_model), join=True)
+        mp.spawn(worker_main, nprocs=world_size, args=(world_size, config, lora_policy, lora_reference), join=True)
     else:
         print('starting single-process worker')
-        worker_main(0, 1, config, policy, lora_reference_model)
+        worker_main(0, 1, config, lora_policy, lora_reference)
 
 
 if __name__ == '__main__':
