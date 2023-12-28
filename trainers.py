@@ -349,7 +349,8 @@ class BasicTrainer(object):
                     else:
                         output_dir = os.path.join(self.run_dir, f'step-{self.example_counter}')
                         rank0_print(f'creating checkpoint to write to {output_dir}...')
-                        self.save(output_dir, mean_eval_metrics)
+                        # self.save(output_dir, mean_eval_metrics)
+                        self.save_lora_params(output_dir)
             #### END EVALUATION ####
 
             #### BEGIN TRAINING ####
