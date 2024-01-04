@@ -122,7 +122,34 @@ Once you've added your dataset, for example `xyz`, you can train on it by passin
 FSDP is recommended for faster training when multiple GPUs are available. In general, you should try to use a batch size of at least 2 on each GPU (i.e., `batch_size // (grad_accumulation_steps * N_GPUS)` is at least 2) to see a speedup from FSDP compared to the `BasicTrainer`. One way to do this is to use mixed precision. This repo implements mixed precision through [FSDP](https://pytorch.org/docs/stable/fsdp.html#torch.distributed.fsdp.MixedPrecision). Enable mixed precision (only supported for `FSDPTrainer`, currently) by passing `model.fsdp_policy_mp=bfloat16` or `model.fsdp_policy_mp=float16` (only `bfloat16` has been tested). Another way to reduce memory usage is activation checkpointing (or *gradient checkpointing*), which can be enabled with `activation_checkpointing=true` (also implemented only for `FSDPTrainer`). Activation checkpointing doesn't always increase throughput, but if you're stuck at batch size per GPU of 1, it's worth a try.
 
 See [this article](https://pytorch.org/blog/efficient-large-scale-training-with-pytorch/) for more information about optimizing FSDP.
+## After DPO/IPO training using LoRA and successfully save the adapter params to directory. We have to merge the adaptors into the base model:
+### Merging the adaptors
 
+To merge the adaptors into the base model we can use the `merge_peft_adapter.py` helper script that comes with TRL:
+
+```
+python merge_peft_adapter.py --base_model_name="meta-llama/Llama-2-7b-hf" --adapter_model_name="dpo/final_checkpoint/" --output_name="stack-llama-2"
+```
+
+which will also push the model to your HuggingFace hub account.
+
+### Running the model
+
+We can load the IPO/DPO-trained LoRA adaptors which were saved by the DPO training step and load them via:
+
+```py
+from peft import AutoPeftModelForCausalLM
+
+
+model = AutoPeftModelForCausalLM.from_pretrained(
+    "dpo/final_checkpoint",
+    low_cpu_mem_usage=True,
+    torch_dtype=torch.float16,
+    load_in_4bit=True,
+)
+
+model.generate(...)
+```
 # Citing DPO
 If DPO or this repository is useful in your own research, you can use the following BibTeX entry:
 
