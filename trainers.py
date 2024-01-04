@@ -75,12 +75,13 @@ def preference_loss(policy_chosen_logps: torch.FloatTensor,
 
     logits = pi_logratios - ref_logratios  # also known as h_{\pi_\theta}^{y_w,y_l}
 
-    if ipo:
-        losses = (logits - 1/(2 * beta)) ** 2  # Eq. 17 of https://arxiv.org/pdf/2310.12036v2.pdf
-    else:
-        # Eq. 3 https://ericmitchell.ai/cdpo.pdf; label_smoothing=0 gives original DPO (Eq. 7 of https://arxiv.org/pdf/2305.18290.pdf)
-        losses = -F.logsigmoid(beta * logits) * (1 - label_smoothing) - F.logsigmoid(-beta * logits) * label_smoothing
-
+    # if ipo:
+    #     losses = (logits - 1/(2 * beta)) ** 2  # Eq. 17 of https://arxiv.org/pdf/2310.12036v2.pdf
+    # else:
+    #     # Eq. 3 https://ericmitchell.ai/cdpo.pdf; label_smoothing=0 gives original DPO (Eq. 7 of https://arxiv.org/pdf/2305.18290.pdf)
+    #     losses = -F.logsigmoid(beta * logits) * (1 - label_smoothing) - F.logsigmoid(-beta * logits) * label_smoothing
+    # define losses = ipo loss for some debug
+    losses = (logits - 1/(2 * beta)) ** 2  # Eq. 17 of https://arxiv.org/pdf/2310.12036v2.pdf
     chosen_rewards = beta * (policy_chosen_logps - reference_chosen_logps).detach()
     rejected_rewards = beta * (policy_rejected_logps - reference_rejected_logps).detach()
 
