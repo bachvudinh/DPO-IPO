@@ -16,10 +16,19 @@ import socket
 from typing import Optional, Set
 import resource
 from peft import LoraConfig, get_peft_model, PeftConfig, PeftModel, AutoPeftModelForCausalLM
-
+import bitsandbytes as bnb
 
 OmegaConf.register_new_resolver("get_local_run_dir", lambda exp_name, local_dirs: get_local_run_dir(exp_name, local_dirs))
 
+def find_all_linear_names(model):
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if isinstance(module, bnb.nn.Linear4bit) or \
+            isinstance(module, bnb.nn.Linear8bitLt) or \
+            isinstance(module, torch.nn.Linear):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+    print(">>> LoRA modules", lora_module_names)
 
 def worker_main(rank: int, world_size: int, config: DictConfig, policy: nn.Module, reference_model: Optional[nn.Module] = None):
     """Main function for each worker process (may be only 1 for BasicTrainer/TensorParallelTrainer)."""
@@ -99,19 +108,18 @@ def main(config: DictConfig):
         bias = 'none',
         task_type = 'CAUSAL_LM',
     )
-    ipo_peft_config = LoraConfig(
-        r =32,
-        lora_alpha = 16,
-        target_modules = [
-            'Wqkv',
-            'out_proj',
-        ],
-        bias = 'none',
-        task_type = 'CAUSAL_LM',
-    )
+
     policy = transformers.AutoModelForCausalLM.from_pretrained(
         config.model.name_or_path, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
     disable_dropout(policy)
+    ipo_peft_config = LoraConfig(
+        r =32,
+        lora_alpha = 16,
+        target_modules = find_all_linear_names(policy),
+        bias = 'none',
+        task_type = 'CAUSAL_LM',
+    )
+    
     lora_policy = get_peft_model(policy, peft_config)
     del policy
     gc.collect()
