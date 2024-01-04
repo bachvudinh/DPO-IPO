@@ -119,7 +119,6 @@ def main(config: DictConfig):
         bias = 'none',
         task_type = 'CAUSAL_LM',
     )
-    
     lora_policy = get_peft_model(policy, peft_config)
     del policy
     gc.collect()
@@ -149,6 +148,9 @@ def main(config: DictConfig):
         output_merged_dir = os.path.join(output_dir, "final_merged_checkpoint")
         model.save_pretrained(output_merged_dir, safe_serialization=True)
         print("Final merged checkpoint saved to %s", output_merged_dir)
+        del model
+        gc.collect()
+        torch.cuda.empty_cache()
         policy = transformers.AutoModelForCausalLM.from_pretrained(
             output_merged_dir, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
         disable_dropout(policy)
