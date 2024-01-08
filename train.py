@@ -119,7 +119,7 @@ def main(config: DictConfig):
         bias = 'none',
         task_type = 'CAUSAL_LM',
     )
-    lora_policy = get_peft_model(policy, peft_config)
+    lora_policy = get_peft_model(policy, ipo_peft_config)
     del policy
     gc.collect()
     # torch.cuda.empty_cache()
