@@ -142,7 +142,7 @@ def main(config: DictConfig):
         gc.collect()
         torch.cuda.empty_cache()
         output_dir = config.model.archive
-        model = AutoPeftModelForCausalLM.from_pretrained(output_dir, torch_dtype=policy_dtype, **model_kwargs)
+        model = AutoPeftModelForCausalLM.from_pretrained(output_dir, torch_dtype=policy_dtype, trust_remote_code=True, **model_kwargs)
         model = model.merge_and_unload()
 
         output_merged_dir = os.path.join(output_dir, "final_merged_checkpoint")
