@@ -97,7 +97,7 @@ def main(config: DictConfig):
     bnb_config = BitsAndBytesConfig( 
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_compute_dtype=torch.float16,
     )
     peft_config = LoraConfig(
         r =32,
@@ -153,12 +153,12 @@ def main(config: DictConfig):
         # gc.collect()
         # torch.cuda.empty_cache()
         policy = transformers.AutoModelForCausalLM.from_pretrained(
-            output_merged_dir, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=policy_dtype, **model_kwargs)
+            output_merged_dir, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=torch.float16,quantization_config=bnb_config, **model_kwargs)
         disable_dropout(policy)
         lora_policy = get_peft_model(policy, ipo_peft_config)
         reference_dtype = getattr(torch, config.model.reference_dtype)
         reference = transformers.AutoModelForCausalLM.from_pretrained(
-            output_merged_dir, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=reference_dtype, **model_kwargs)
+            output_merged_dir, cache_dir=get_local_dir(config.local_dirs), trust_remote_code=True ,low_cpu_mem_usage=True, torch_dtype=torch.float16,quantization_config=bnb_config, **model_kwargs)
         disable_dropout(reference)
         lora_reference = get_peft_model(reference, ipo_peft_config)
         # lora_config_poli = PeftConfig.from_pretrained(config.model.archive)
